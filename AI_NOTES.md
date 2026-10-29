@@ -103,4 +103,5 @@ Before submitting, two more checks ran:
 I gave Claude Code the brief and had it build the project. Before submitting, I asked for a full
 recheck against the brief's requirements. That recheck (the independent review, mutation testing,
 and a test from a fresh clone) found the issues listed above, and they were fixed in separate
-commits. I then rechecked the results myself and went through how the app works.
+commits. I then rechecked the results, the code structure and the design ideas myself, and went through
+how the app works.
