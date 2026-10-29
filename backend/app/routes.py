@@ -1,9 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Response, status
 from sqlalchemy.orm import Session
 
-from app import repository as repo
 from app import service
 from app.db import get_session
 from app.models import Group, User
@@ -21,7 +20,11 @@ def current_user(session: SessionDep, x_user: Annotated[str | None, Header()] = 
 UserDep = Annotated[User, Depends(current_user)]
 
 
-def member_group(group_id: int, session: SessionDep, user: UserDep) -> Group:
+# Ids are PostgreSQL INTEGER columns; larger values would overflow in the query.
+DbId = Annotated[int, Path(ge=1, le=2**31 - 1)]
+
+
+def member_group(group_id: DbId, session: SessionDep, user: UserDep) -> Group:
     return service.get_group_for_member(session, group_id, user)
 
 
@@ -30,7 +33,7 @@ GroupDep = Annotated[Group, Depends(member_group)]
 
 @router.get("/groups", response_model=list[GroupSummary])
 def list_groups(session: SessionDep, user: UserDep):
-    return [GroupSummary(id=g.id, name=g.name) for g in repo.list_groups_for_user(session, user.id)]
+    return service.list_groups(session, user)
 
 
 @router.get("/groups/{group_id}", response_model=GroupDetail)
@@ -61,7 +64,7 @@ def list_expenses(session: SessionDep, group: GroupDep):
 
 
 @router.delete("/groups/{group_id}/expenses/{expense_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_expense(expense_id: int, session: SessionDep, user: UserDep, group: GroupDep):
+def delete_expense(expense_id: DbId, session: SessionDep, user: UserDep, group: GroupDep):
     service.delete_expense(session, group, user, expense_id)
 
 

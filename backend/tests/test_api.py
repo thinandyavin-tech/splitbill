@@ -2,11 +2,13 @@ import threading
 from decimal import Decimal
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app import repository as repo
 from app import service
 from app.db import SessionLocal, engine
+from app.main import app
 from app.schemas import ExpenseCreate
 
 
@@ -111,11 +113,51 @@ def test_amount_with_three_decimal_places_is_rejected(client):
     assert expense_count() == 0
 
 
-@pytest.mark.parametrize("amount", ["0.00", "-10.00", 10.5])
-def test_zero_negative_or_numeric_amount_is_rejected(client, amount):
+@pytest.mark.parametrize(
+    ("amount", "code"),
+    [("0.00", "validation_error"), ("-10.00", "validation_error"), (10.5, "invalid_request")],
+)
+def test_zero_negative_or_numeric_amount_is_rejected(client, amount, code):
     res = post_expense(client, "alice", equal(amount, ["alice", "bob"]))
     assert res.status_code == 422
-    assert res.json()["error"]["code"] == "validation_error"
+    assert res.json()["error"]["code"] == code
+    assert expense_count() == 0
+
+
+def test_exact_share_with_three_decimal_places_is_rejected(client):
+    body = {
+        "description": "Hotel",
+        "paid_by": "alice",
+        "amount": "10.00",
+        "split": {"type": "exact", "shares": {"alice": "5.005", "bob": "4.995"}},
+    }
+    res = post_expense(client, "alice", body)
+    assert res.status_code == 422
+    assert "2 decimal places" in res.json()["error"]["message"]
+    assert expense_count() == 0
+
+
+# --- Consistent JSON errors ---
+
+
+def test_out_of_range_id_is_a_json_error_not_a_crash(client):
+    res = client.get("/groups/99999999999", headers={"X-User": "alice"})
+    assert res.status_code == 422
+    assert res.json()["error"]["code"] == "invalid_request"
+
+
+def test_unexpected_server_error_is_json(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("database exploded")
+
+    monkeypatch.setattr(service, "balances", boom)
+    res = TestClient(app, raise_server_exceptions=False).get(
+        "/groups/1/balances", headers={"X-User": "alice"}
+    )
+    assert res.status_code == 500
+    assert res.json() == {
+        "error": {"code": "internal_error", "message": "Something went wrong on the server"}
+    }
 
 
 # --- Required: idempotency ---

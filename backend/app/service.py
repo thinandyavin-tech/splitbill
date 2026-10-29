@@ -15,6 +15,7 @@ from app.schemas import (
     ExactSplit,
     ExpenseCreate,
     ExpenseOut,
+    GroupSummary,
     ShareOut,
 )
 
@@ -26,6 +27,10 @@ def authenticate(session: Session, username: str | None) -> User:
     if user is None:
         raise Unauthenticated(f"Unknown user '{username}'")
     return user
+
+
+def list_groups(session: Session, user: User) -> list[GroupSummary]:
+    return [GroupSummary(id=g.id, name=g.name) for g in repo.list_groups_for_user(session, user.id)]
 
 
 def get_group_for_member(session: Session, group_id: int, user: User) -> Group:
