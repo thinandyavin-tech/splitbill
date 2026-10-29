@@ -112,8 +112,10 @@ expense:
    winner's expense.
 
 The guarantee comes from the database constraint, not from application locking, so it holds across
-processes and servers. A test fires 8 concurrent requests with the same key and asserts exactly one
-row and one `201`. The key is scoped per group, as the brief says. A replay returns the original
+processes and servers. A test forces the race deterministically. Request A inserts the key and
+keeps its transaction open. Request B then gets past the lookup, blocks on the `INSERT` (the test
+asserts it is still waiting), and once A commits, B returns A's expense with exactly one row in the
+table. The key is scoped per group, as the brief says. A replay returns the original
 even if the body differs (see limitations). The header is optional; without it, every POST creates
 a new expense.
 

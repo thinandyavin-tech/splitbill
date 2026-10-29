@@ -50,7 +50,18 @@ All of these happened while building this repository.
    available". **Detection:** rendering the migrations to SQL before any database was available.
    **Fix:** give the lightweight table columns explicit types.
 
-5. Smaller ones caught by tooling: a stray closing parenthesis in the React form (caught by
+5. **A concurrency test that didn't test concurrency.** The first idempotency race test fired
+   8 threads through FastAPI's `TestClient` with a barrier and asserted one `201` and seven `200`s.
+   It passed, but the requests were effectively serialized, so the `ON CONFLICT` path never ran.
+   **Detection:** mutation testing. Each business rule was broken on purpose in a throwaway clone,
+   and the suite was checked for a failure. Deleting `ON CONFLICT DO NOTHING` entirely left every
+   test green. **Fix:** a deterministic test. Session A inserts the key without committing, request
+   B runs in a thread, the test asserts B is blocked, and after A commits it asserts B returns A's
+   expense. The mutation is now caught, as are the other 7 (leftover satang order, group access,
+   payer-only delete, exact-sum check, 3-decimal rejection, soft-delete exclusion, split
+   membership).
+
+6. Smaller ones caught by tooling: a stray closing parenthesis in the React form (caught by
    ESLint and `tsc`), and import-order churn because ruff took the local `alembic/` folder for
    first-party code (fixed with `known-third-party`).
 

@@ -4,7 +4,10 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from app.db import engine
+from app import repository as repo
+from app import service
+from app.db import SessionLocal, engine
+from app.schemas import ExpenseCreate
 
 
 def post_expense(client, user, body, group_id=1, key=None):
@@ -135,24 +138,45 @@ def test_same_idempotency_key_in_another_group_is_independent(client):
     assert expense_count() == 2
 
 
-def test_concurrent_requests_with_same_key_create_one_expense(client):
-    body = equal("300.00", ["alice", "bob", "carol"])
-    barrier = threading.Barrier(8)
-    results = []
+def test_concurrent_requests_with_same_key_create_one_expense():
+    """Force the race: request A has inserted the key but not committed when request B
+    arrives. B's lookup can't see A's row yet, so B reaches the INSERT, which must wait
+    for A and then hand back A's expense instead of creating a second one."""
+    data = ExpenseCreate(**equal("300.00", ["alice", "bob", "carol"]))
+    with SessionLocal() as session_a, SessionLocal() as session_b:
+        alice = repo.get_user(session_a, "alice")
+        group = repo.get_group(session_a, 1)
+        winner_id = repo.insert_expense(
+            session_a,
+            group_id=1,
+            description=data.description,
+            paid_by_id=alice.id,
+            created_by_id=alice.id,
+            amount=Decimal("300.00"),
+            split_type="equal",
+            idempotency_key="race-1",
+            shares=[(m.id, Decimal("100.00")) for m in group.members],
+        )
 
-    def send():
-        barrier.wait()
-        results.append(post_expense(client, "alice", body, key="race-1"))
+        result = {}
+        b_user = repo.get_user(session_b, "alice")
+        b_group = repo.get_group(session_b, 1)
+        thread = threading.Thread(
+            target=lambda: result.update(
+                out=service.create_expense(session_b, b_group, b_user, data, "race-1")
+            )
+        )
+        thread.start()
+        thread.join(timeout=1)
+        assert thread.is_alive(), "request B should be blocked on A's uncommitted key"
 
-    threads = [threading.Thread(target=send) for _ in range(8)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+        session_a.commit()
+        thread.join(timeout=10)
 
+    expense, created = result["out"]
+    assert created is False
+    assert expense.id == winner_id
     assert expense_count() == 1
-    assert sorted(r.status_code for r in results) == [200] * 7 + [201]
-    assert len({r.json()["id"] for r in results}) == 1
 
 
 # --- Required: group access ---
