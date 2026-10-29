@@ -80,4 +80,22 @@ backend tests passed. After that, the app was checked by hand in a browser: the 
 example, the live 33.34/33.33/33.33 preview, the 0.1 + 0.2 = 0.30 exact split with submit
 disabled until the shares add up, and balances updating after a save.
 
+Before submitting, two more checks ran:
+
+- **Mutation testing** (see item 5 above): 8 business rules were broken one at a time in a
+  throwaway clone, and the suite now fails for every one.
+- **An independent AI review against the brief.** A second agent was given only the PDF and the
+  repository, not the first agent's reasoning, and asked to grade it strictly. It found real issues
+  that were then fixed in their own commits:
+  - switching user in the UI briefly showed a false "not a member" error
+  - `GET /groups/99999999999` returned a plain-text 500, breaking the "consistent JSON errors"
+    standard
+  - one route called the repository directly
+  - the README claimed Node 20 (the tests need 22.18+) and had a wrong `cd` in the test
+    instructions
+
+  It also pointed out that the regex fix in item 1 landed inside the "Add expense, group and
+  balance endpoints" commit instead of its own commit. That is accurate: the history isn't
+  perfectly one-step-per-commit there.
+
 <!-- TODO(author): describe your own review of the AI-generated code here before submitting. -->
