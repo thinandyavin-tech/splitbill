@@ -8,7 +8,9 @@ and see each member's net balance to the satang.
 
 ## Setup
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node.js 20+.
+Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node.js 22.18+ (the frontend tests use Node's built-in TypeScript support).
+
+Docker Compose publishes Postgres on port 5432. If a local PostgreSQL already uses that port, stop it or change the left side of `"5432:5432"` (and `DATABASE_URL`/`TEST_DATABASE_URL` to match).
 
 ```bash
 # 1. Database + API in containers (migrations and seed data run automatically)
@@ -43,7 +45,7 @@ docker compose up -d db
 cd backend && cp .env.example .env   # first time only
 uv run pytest                        # backend: business rules, against real PostgreSQL
 
-cd frontend && npm test              # frontend money helpers (Node's built-in test runner)
+cd ../frontend && npm test           # frontend money helpers (Node's built-in test runner)
 ```
 
 `pytest` migrates `TEST_DATABASE_URL` to head and truncates the expense tables before each
@@ -74,7 +76,9 @@ Errors always look like `{"error": {"code": "shares_mismatch", "message": "The s
 | 403 `not_payer` | A member tries to delete someone else's expense |
 | 404 `group_not_found` | Group doesn't exist **or** the user isn't a member |
 | 404 `expense_not_found` | Expense doesn't exist in this group, or is already deleted |
-| 422 `validation_error` / `shares_mismatch` / `not_group_member` / `duplicate_member` | Bad input |
+| 422 `invalid_request` | Malformed request: missing field, wrong JSON type (e.g. amount sent as a number), id out of range |
+| 422 `validation_error` / `shares_mismatch` / `not_group_member` / `duplicate_member` | Well-formed request that breaks a business rule |
+| 500 `internal_error` | Unexpected server error (details are logged, not returned) |
 
 ## Design decisions
 
@@ -82,7 +86,11 @@ Errors always look like `{"error": {"code": "shares_mismatch", "message": "The s
 strict regex (ASCII digits, at most 2 decimal places, no signs, exponents or separators) into an
 `int` number of satang (`app/money.py`). All splitting and summing is integer arithmetic. At the
 edges, satang become `Decimal` for the `NUMERIC(12,2)` columns and the strings in responses.
-`float` is never used. JSON numbers like `10.5` are rejected (pydantic strict mode) so a float can't
+`float` is never used. The brief asks for `Decimal`, and integer satang are the same thing in
+another unit. A value with exactly 2 decimal places times 100 is an exact integer, so no rounding
+can ever happen. Splitting needs integer division with a remainder anyway (`divmod`), which reads
+more clearly on ints than on `Decimal` with `quantize`. `Decimal` is used at every boundary: the
+database columns, and parsing/formatting. JSON numbers like `10.5` are rejected (pydantic strict mode) so a float can't
 sneak in through the body. `"10.005"` is rejected rather than rounded, because silently changing
 someone's amount is worse than asking again.
 
@@ -116,7 +124,9 @@ processes and servers. A test forces the race deterministically. Request A inser
 keeps its transaction open. Request B then gets past the lookup, blocks on the `INSERT` (the test
 asserts it is still waiting), and once A commits, B returns A's expense with exactly one row in the
 table. The key is scoped per group, as the brief says. A replay returns the original
-even if the body differs (see limitations). The header is optional; without it, every POST creates
+even if the body differs (see limitations), and even if that expense has since been deleted. It
+then comes back with `"deleted": true` rather than being recreated, because the key identifies
+that one expense. The header is optional; without it, or with an empty value, every POST creates
 a new expense.
 
 **Immutability and soft delete.** There is no update endpoint. Delete sets `deleted_at`. The row
@@ -164,4 +174,4 @@ after a successful save. A double-click or a retry after a timeout cannot create
 
 ## Time spent
 
-About 3 hours, built with heavy AI assistance (see `AI_NOTES.md`).
+About 1.5 hours in one AI-assisted session, plus time lost getting a local database running (see `AI_NOTES.md`). The commits are therefore close together in time, but each one is a separate logical step.
