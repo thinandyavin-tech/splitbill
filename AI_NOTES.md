@@ -98,4 +98,10 @@ Before submitting, two more checks ran:
   balance endpoints" commit instead of its own commit. That is accurate: the history isn't
   perfectly one-step-per-commit there.
 
-<!-- TODO(author): describe your own review of the AI-generated code here before submitting. -->
+### My own review
+
+I gave Claude Code the brief and had it build the project. Before submitting, I asked for a full
+recheck against the brief's requirements. That recheck (the independent review, mutation testing,
+and a test from a fresh clone) found the issues listed above, and they were fixed in separate
+commits. I had not yet studied the code in depth at the time of submission; I am going through each
+business rule and design decision before the interview.
