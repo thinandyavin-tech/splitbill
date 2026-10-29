@@ -23,7 +23,10 @@ def test_three_decimal_places_rejected(value):
         parse_satang(value, "amount")
 
 
-@pytest.mark.parametrize("value", ["0", "0.00", "-5.00", "abc", "", "1e3", " 1.00", "1,000.00"])
+@pytest.mark.parametrize(
+    "value",
+    ["0", "0.00", "-5.00", "abc", "", "1e3", " 1.00", "1,000.00", "100.00\n", "๑๐๐", ".50", "5."],
+)
 def test_invalid_or_non_positive_rejected(value):
     with pytest.raises(ValidationFailed):
         parse_satang(value, "amount")

@@ -63,6 +63,7 @@ class Expense(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     paid_by: Mapped[User] = relationship(foreign_keys=[paid_by_id])
+    created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
     shares: Mapped[list["ExpenseShare"]] = relationship(order_by="ExpenseShare.position")
 
 
