@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BalanceList } from "@/components/BalanceList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ExpenseList } from "@/components/ExpenseList";
@@ -21,49 +21,63 @@ export default function Home() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after a create or delete to reload the selected group.
+  const [version, setVersion] = useState(0);
+
+  // Clear the selection in the same render as the switch, so the old group is never
+  // requested as the new user (which would show a false "not a member" error).
+  function selectUser(u: string) {
+    setUser(u);
+    setGroups([]);
+    selectGroup(null);
+  }
+
+  function selectGroup(id: number | null) {
+    setGroupId(id);
+    setGroup(null);
+    setError(null);
+  }
 
   useEffect(() => {
-    setError(null);
-    setGroups([]);
-    setGroupId(null);
+    let stale = false;
     api
       .groups(user)
       .then((gs) => {
+        if (stale) return;
         setGroups(gs);
-        setGroupId(gs[0]?.id ?? null);
+        selectGroup(gs[0]?.id ?? null);
       })
-      .catch((e) => setError(message(e)));
+      .catch((e) => !stale && setError(message(e)));
+    return () => {
+      stale = true;
+    };
   }, [user]);
 
-  const refresh = useCallback(async () => {
-    if (groupId === null) {
-      setGroup(null);
-      return;
-    }
-    try {
-      const [g, ex, bal] = await Promise.all([
-        api.group(user, groupId),
-        api.expenses(user, groupId),
-        api.balances(user, groupId),
-      ]);
-      setGroup(g);
-      setExpenses(ex);
-      setBalances(bal);
-    } catch (e) {
-      setError(message(e));
-    }
-  }, [user, groupId]);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (groupId === null) return;
+    // Ignore responses that arrive after the user or group has changed again.
+    let stale = false;
+    Promise.all([api.group(user, groupId), api.expenses(user, groupId), api.balances(user, groupId)])
+      .then(([g, ex, bal]) => {
+        if (stale) return;
+        setGroup(g);
+        setExpenses(ex);
+        setBalances(bal);
+      })
+      .catch((e) => !stale && setError(message(e)));
+    return () => {
+      stale = true;
+    };
+  }, [user, groupId, version]);
+
+  const reload = () => setVersion((v) => v + 1);
 
   async function handleDelete(expenseId: number) {
     if (groupId === null) return;
     setError(null);
     try {
       await api.deleteExpense(user, groupId, expenseId);
-      await refresh();
+      reload();
     } catch (e) {
       setError(message(e));
     }
@@ -76,7 +90,7 @@ export default function Home() {
       <div className="flex flex-wrap gap-4">
         <label className="flex flex-col text-sm">
           User
-          <select className="rounded border p-2" value={user} onChange={(e) => setUser(e.target.value)}>
+          <select className="rounded border p-2" value={user} onChange={(e) => selectUser(e.target.value)}>
             {USERS.map((u) => (
               <option key={u}>{u}</option>
             ))}
@@ -87,7 +101,7 @@ export default function Home() {
           <select
             className="rounded border p-2"
             value={groupId ?? ""}
-            onChange={(e) => setGroupId(Number(e.target.value))}
+            onChange={(e) => selectGroup(Number(e.target.value))}
           >
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
@@ -112,7 +126,7 @@ export default function Home() {
             group={group}
             onCreated={() => {
               setError(null);
-              refresh();
+              reload();
             }}
           />
           <div className="space-y-6">

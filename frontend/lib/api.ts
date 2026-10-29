@@ -28,6 +28,8 @@ const MESSAGES: Record<string, string> = {
   not_payer: "Only the person who paid can delete this expense.",
   unauthenticated: "Please choose a user first.",
   duplicate_member: "A member is listed twice in the split.",
+  invalid_request: "Some details are missing or in the wrong format. Please check the form.",
+  internal_error: "Something went wrong on the server. Please try again.",
 };
 
 export class ApiError extends Error {}
